@@ -270,31 +270,86 @@ export default function TransactionForm({ type, onClose, onSave, title, editData
     const isPayment = type === 'payment_in' || type === 'payment_out';
     const isP2P = type === 'p2p';
 
-    const [form, setForm] = useState({
-        customerId: editData?.customerId || '',
-        customerName: editData?.customerName || '',
-        date: editData?.date || new Date().toISOString().split('T')[0],
-        items: editData?.items || [],
-        subtotal: editData?.subtotal || 0,
-        discount: editData?.discount || 0,
-        tax: editData?.tax || 0,
-        total: editData?.total || 0,
-        paid: editData?.paid || 0,
-        balance: editData?.balance || 0,
-        notes: editData?.notes || '',
-        paymentMode: editData?.paymentMode || 'Cash',
-        status: editData?.status || 'completed',
-        category: editData?.category || 'Rent',
-        amount: editData?.amount || 0,
-        fromParty: editData?.fromParty || '',
-        toParty: editData?.toParty || '',
-        transferAmount: editData?.transferAmount || 0,
+    // ── Draft auto-save (survives crashes / power cuts / accidental closes) ──
+    // Each transaction type + editData.id gets its own slot, so editing invoice #12
+    // never clobbers a half-filled "new sale" draft, and vice-versa.
+    const draftKey = `mediglow_draft_${type}_${editData?.id || 'new'}`;
+    const draftRestoredRef = useRef(false);
+
+    const loadDraft = () => {
+        try {
+            const raw = localStorage.getItem(draftKey);
+            return raw ? JSON.parse(raw) : null;
+        } catch {
+            return null;
+        }
+    };
+
+    const [form, setForm] = useState(() => {
+        const savedDraft = loadDraft();
+        return {
+            customerId: savedDraft?.customerId ?? editData?.customerId ?? '',
+            customerName: savedDraft?.customerName ?? editData?.customerName ?? '',
+            date: savedDraft?.date ?? editData?.date ?? new Date().toISOString().split('T')[0],
+            items: savedDraft?.items ?? editData?.items ?? [],
+            subtotal: savedDraft?.subtotal ?? editData?.subtotal ?? 0,
+            discount: savedDraft?.discount ?? editData?.discount ?? 0,
+            tax: savedDraft?.tax ?? editData?.tax ?? 0,
+            total: savedDraft?.total ?? editData?.total ?? 0,
+            paid: savedDraft?.paid ?? editData?.paid ?? 0,
+            balance: savedDraft?.balance ?? editData?.balance ?? 0,
+            notes: savedDraft?.notes ?? editData?.notes ?? '',
+            paymentMode: savedDraft?.paymentMode ?? editData?.paymentMode ?? 'Cash',
+            status: savedDraft?.status ?? editData?.status ?? 'completed',
+            category: savedDraft?.category ?? editData?.category ?? 'Rent',
+            amount: savedDraft?.amount ?? editData?.amount ?? 0,
+            fromParty: savedDraft?.fromParty ?? editData?.fromParty ?? '',
+            toParty: savedDraft?.toParty ?? editData?.toParty ?? '',
+            transferAmount: savedDraft?.transferAmount ?? editData?.transferAmount ?? 0,
+        };
     });
+
+    // Let the user know their unsaved work came back, and give them the option to start clean
+    useEffect(() => {
+        const savedDraft = loadDraft();
+        if (savedDraft && !draftRestoredRef.current) {
+            draftRestoredRef.current = true;
+            toast((t) => (
+                <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    Unsaved draft restored
+                    <button
+                        className="btn btn-ghost btn-sm"
+                        style={{ fontSize: 11, padding: '2px 8px' }}
+                        onClick={() => {
+                            localStorage.removeItem(draftKey);
+                            toast.dismiss(t.id);
+                            window.location.reload();
+                        }}
+                    >
+                        Discard & start fresh
+                    </button>
+                </span>
+            ), { duration: 6000, icon: '📝' });
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    // Autosave every change (debounced) so a crash/power-cut never loses data
+    useEffect(() => {
+        const t = setTimeout(() => {
+            try {
+                localStorage.setItem(draftKey, JSON.stringify(form));
+            } catch {
+                // storage full or unavailable — silently skip, nothing critical is lost immediately
+            }
+        }, 500);
+        return () => clearTimeout(t);
+    }, [form, draftKey]);
 
     const [itemSearch, setItemSearch] = useState('');
     const [showItemDropdown, setShowItemDropdown] = useState(false);
     const [showQuickAddItem, setShowQuickAddItem] = useState(false);
-    const [custSearch, setCustSearch] = useState(editData?.customerName || '');
+    const [custSearch, setCustSearch] = useState(() => loadDraft()?.customerName || editData?.customerName || '');
     const [showCustDropdown, setShowCustDropdown] = useState(false);
     const [showQuickAddParty, setShowQuickAddParty] = useState(false);
     const [selectedPartyType, setSelectedPartyType] = useState('');
@@ -344,15 +399,15 @@ export default function TransactionForm({ type, onClose, onSave, title, editData
             const newItem = {
                 productId: product.id,
                 name: product.item_name,
-                qty: 1,
+                qty: 0,
                 unit: product.unit || 'Pcs',
                 mrp: product.mrp || 0,
                 price: type === 'purchase' || type === 'purchase_return' ? product.purchase_price : product.selling_price,
                 discount: 0,
                 gst: product.gst || 0,
-                amount: type === 'purchase' || type === 'purchase_return' ? product.purchase_price : product.selling_price,
+                amount: 0,
             };
-            setForm(f => ({ ...f, items: [...f.items, newItem] }));
+            setForm(f => ({ ...f, items: [newItem, ...f.items] }));
         }
         setItemSearch('');
         setShowItemDropdown(false);
@@ -403,6 +458,7 @@ export default function TransactionForm({ type, onClose, onSave, title, editData
         e.preventDefault();
         if (!isExpense && !isPayment && !isP2P && form.items.length === 0) { toast.error('Please add at least one item'); return; }
         if (!isExpense && !isPayment && !isP2P && !form.customerName) { toast.error('Please select a party'); return; }
+        localStorage.removeItem(draftKey); // only clear once they actually hit Save/Update
         onSave(form);
     };
 

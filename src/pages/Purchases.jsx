@@ -27,6 +27,7 @@ export default function Purchases() {
     const [showForm, setShowForm] = useState(false);
     const [editData, setEditData] = useState(null);
     const [search, setSearch] = useState('');
+    const [dateFilter, setDateFilter] = useState(''); // 'YYYY-MM-DD' from the date picker, '' = all dates
     const [transactions, setTransactions] = useState([]);
     const [loading, setLoading] = useState(true);
 
@@ -55,10 +56,26 @@ export default function Purchases() {
         fetchTransactions();
     }, [activeTab]);
 
+    // Pulls the numeric part out of "PURC-00019" -> 19, so we can sort newest-first
+    const getInvoiceSeq = (invoiceNo) => {
+        const match = String(invoiceNo || '').match(/(\d+)\s*$/);
+        return match ? parseInt(match[1], 10) : 0;
+    };
+
     const getList = () => {
-        return transactions.filter(t =>
-            (t.customerName || t.notes || t.invoiceNo || '').toLowerCase().includes(search.toLowerCase())
-        );
+        return transactions
+            .filter(t =>
+                (t.customerName || t.notes || t.invoiceNo || '').toLowerCase().includes(search.toLowerCase())
+            )
+            .filter(t => {
+                if (!dateFilter) return true;
+                if (!t.date) return false;
+                const d = new Date(t.date);
+                if (isNaN(d)) return false;
+                const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                return key === dateFilter;
+            })
+            .sort((a, b) => getInvoiceSeq(b.invoiceNo) - getInvoiceSeq(a.invoiceNo));
     };
 
     const handleSave = async (data) => {
@@ -109,6 +126,23 @@ export default function Purchases() {
             fetchTransactions();
         } catch (error) {
             toast.error('Failed to delete transaction');
+        }
+    };
+
+    const handleMarkPaid = async (txn) => {
+        if (!confirm('Mark this purchase as fully paid?')) return;
+        try {
+            await transactionsService.update(txn.id, {
+                paid: txn.total || 0,
+                balance: 0,
+                status: 'completed',
+                payment_status: 'PAID',
+            });
+            toast.success('Marked as paid!');
+            fetchTransactions();
+        } catch (error) {
+            console.error(error);
+            toast.error('Failed to update payment status');
         }
     };
 
@@ -214,13 +248,29 @@ export default function Purchases() {
                 </div>
             </div>
 
-            {/* Search */}
-            <div style={{ marginBottom: 16 }}>
-                <div className="search-bar">
+            {/* Search + Date Filter */}
+            <div style={{ marginBottom: 16, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                <div className="search-bar" style={{ flex: 1, minWidth: 220 }}>
                     <Search size={16} color="var(--text-muted)" />
                     <input value={search} onChange={e => setSearch(e.target.value)}
                         placeholder={`Search ${TYPE_LABELS[activeTab].toLowerCase()}s...`} />
                 </div>
+                <input
+                    type="date"
+                    value={dateFilter}
+                    onChange={e => setDateFilter(e.target.value)}
+                    title="Filter by date"
+                    style={{
+                        background: 'var(--bg-card)', color: 'var(--text-primary)',
+                        border: '1px solid var(--border)', borderRadius: 8,
+                        padding: '10px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer'
+                    }}
+                />
+                {dateFilter && (
+                    <button className="btn btn-ghost btn-sm" onClick={() => setDateFilter('')}>
+                        Clear date
+                    </button>
+                )}
             </div>
 
             {/* Table */}
@@ -234,13 +284,15 @@ export default function Purchases() {
                                 <th>Date</th>
                                 <th>Type</th>
                                 <th style={{ textAlign: 'right' }}>Amount</th>
+                                <th style={{ textAlign: 'right' }}>Balance</th>
+                                <th>Status</th>
                                 <th style={{ textAlign: 'center' }}>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
                             {list.length === 0 && (
                                 <tr>
-                                    <td colSpan={6}>
+                                    <td colSpan={8}>
                                         <div className="empty-state">
                                             <Package size={40} />
                                             <h3>No {TYPE_LABELS[activeTab]}s yet</h3>
@@ -266,6 +318,14 @@ export default function Purchases() {
                                     </td>
                                     <td style={{ textAlign: 'right', fontWeight: 700 }}>
                                         {formatCurrency(txn.total || txn.paid || txn.amount || 0)}
+                                    </td>
+                                    <td style={{ textAlign: 'right', fontWeight: 600, color: (txn.balance || 0) > 0 ? 'var(--red)' : 'var(--green)' }}>
+                                        {formatCurrency(txn.balance || 0)}
+                                    </td>
+                                    <td>
+                                        <span className={`badge ${txn.balance > 0 ? 'badge-yellow' : 'badge-green'}`}>
+                                            {txn.balance > 0 ? 'Pending' : 'Paid'}
+                                        </span>
                                     </td>
                                     <td>
                                         <div className="action-btns" style={{ justifyContent: 'center' }}>
@@ -300,6 +360,13 @@ export default function Purchases() {
                                                     <path d="M16 3C9.373 3 4 8.373 4 15c0 2.385.668 4.61 1.832 6.5L4 29l7.75-1.812A12.93 12.93 0 0 0 16 28c6.627 0 12-5.373 12-12S22.627 3 16 3zm0 2c5.523 0 10 4.477 10 10s-4.477 10-10 10a9.953 9.953 0 0 1-5.174-1.453l-.364-.219-4.596 1.074 1.094-4.47-.238-.373A9.953 9.953 0 0 1 6 15c0-5.523 4.477-10 10-10zm-3.38 5c-.213 0-.56.08-.854.398-.294.317-1.122 1.095-1.122 2.67 0 1.576 1.147 3.098 1.307 3.313.16.214 2.235 3.563 5.51 4.853 2.718 1.073 3.274.86 3.865.806.59-.054 1.903-.777 2.171-1.527.268-.75.268-1.393.188-1.527-.08-.134-.294-.214-.615-.374-.321-.16-1.903-.938-2.197-1.045-.294-.107-.508-.16-.722.16-.214.32-.83 1.045-1.017 1.26-.187.214-.374.24-.695.08-.321-.16-1.355-.5-2.581-1.594-.955-.852-1.6-1.903-1.787-2.224-.187-.32-.02-.494.14-.653.144-.143.321-.374.482-.561.16-.187.213-.32.32-.534.107-.213.054-.4-.027-.561-.08-.16-.703-1.742-.976-2.383-.254-.614-.516-.534-.722-.534z"/>
                                                 </svg>
                                             </button>
+                                            {(txn.balance || 0) > 0 && (
+                                                <button className="btn btn-ghost btn-icon btn-sm" title="Mark as Paid"
+                                                    style={{ color: 'var(--green)' }}
+                                                    onClick={() => handleMarkPaid(txn)}>
+                                                    <CheckCircle size={14} />
+                                                </button>
+                                            )}
                                             <button className="btn btn-danger btn-icon btn-sm" title="Delete"
                                                 onClick={() => handleDelete(txn.id)}>
                                                 <Trash2 size={14} />

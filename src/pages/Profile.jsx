@@ -1,25 +1,51 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     User, Building2, Phone, Mail, MapPin, Hash, Check,
-    Upload, Trash2, Github, ShieldCheck, Palette, QrCode
+    Upload, Trash2, Github, ShieldCheck, Palette, QrCode, Camera
 } from 'lucide-react';
 import useStore from '../store/useStore';
 import toast from 'react-hot-toast';
 
 export default function Profile() {
-    const { profile, updateProfile } = useStore();
+    const { profile, updateProfile, loadProfile } = useStore();
     const [formData, setFormData] = useState({ ...profile });
     const [isSaving, setIsSaving] = useState(false);
+    const [isLoading, setIsLoading] = useState(true);
 
-    const handleSubmit = (e) => {
+    // Pull the latest saved profile from Firestore when this page opens,
+    // so edits made on any device/browser show up here — not just whatever
+    // was last cached in this browser's localStorage.
+    useEffect(() => {
+        (async () => {
+            try {
+                await loadProfile();
+            } catch (err) {
+                console.error(err);
+                toast.error('Could not load latest profile from server, showing cached data');
+            } finally {
+                setIsLoading(false);
+            }
+        })();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    // Keep the form in sync once the freshly-loaded profile arrives
+    useEffect(() => {
+        setFormData({ ...profile });
+    }, [profile]);
+
+    const handleSubmit = async (e) => {
         e.preventDefault();
         setIsSaving(true);
-        // Simulate API call
-        setTimeout(() => {
-            updateProfile(formData);
-            setIsSaving(false);
+        try {
+            await updateProfile(formData);
             toast.success('Business Profile updated successfully!');
-        }, 800);
+        } catch (err) {
+            console.error('Failed to save profile:', err);
+            toast.error('Failed to save profile. Please check your connection and try again.');
+        } finally {
+            setIsSaving(false);
+        }
     };
 
     const handleChange = (e) => {
@@ -27,7 +53,7 @@ export default function Profile() {
         setFormData(prev => ({ ...prev, [name]: value }));
     };
 
-    const handleQRUpload = (e) => {
+    const handleQRUpload = async (e) => {
         const file = e.target.files?.[0];
         if (!file) return;
         if (!file.type.startsWith('image/')) {
@@ -35,20 +61,68 @@ export default function Profile() {
             return;
         }
         const reader = new FileReader();
-        reader.onload = () => {
+        reader.onload = async () => {
             const base64 = reader.result;
             setFormData(prev => ({ ...prev, paymentQR: base64 }));
-            updateProfile({ paymentQR: base64 });
-            toast.success('Payment QR saved! It will now be sent on WhatsApp.');
+            try {
+                await updateProfile({ paymentQR: base64 });
+                toast.success('Payment QR saved! It will now be sent on WhatsApp.');
+            } catch (err) {
+                console.error(err);
+                toast.error('Failed to save QR code. Please try again.');
+            }
         };
         reader.onerror = () => toast.error('Failed to read image');
         reader.readAsDataURL(file);
     };
 
-    const handleQRRemove = () => {
+    const handleQRRemove = async () => {
         setFormData(prev => ({ ...prev, paymentQR: null }));
-        updateProfile({ paymentQR: null });
-        toast.success('Payment QR removed');
+        try {
+            await updateProfile({ paymentQR: null });
+            toast.success('Payment QR removed');
+        } catch (err) {
+            console.error(err);
+            toast.error('Failed to remove QR code. Please try again.');
+        }
+    };
+
+    const handleProfilePicUpload = async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        if (!file.type.startsWith('image/')) {
+            toast.error('Please upload an image file');
+            return;
+        }
+        if (file.size > 3 * 1024 * 1024) {
+            toast.error('Image too large. Please choose one under 3MB.');
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = async () => {
+            const base64 = reader.result;
+            setFormData(prev => ({ ...prev, profilePic: base64 }));
+            try {
+                await updateProfile({ profilePic: base64 });
+                toast.success('Profile picture updated!');
+            } catch (err) {
+                console.error(err);
+                toast.error('Failed to save profile picture. Please try again.');
+            }
+        };
+        reader.onerror = () => toast.error('Failed to read image');
+        reader.readAsDataURL(file);
+    };
+
+    const handleProfilePicRemove = async () => {
+        setFormData(prev => ({ ...prev, profilePic: null }));
+        try {
+            await updateProfile({ profilePic: null });
+            toast.success('Profile picture removed');
+        } catch (err) {
+            console.error(err);
+            toast.error('Failed to remove profile picture. Please try again.');
+        }
     };
 
     return (
@@ -56,7 +130,9 @@ export default function Profile() {
             <div className="page-header">
                 <div>
                     <h1 className="page-title">Business Profile</h1>
-                    <p className="page-subtitle">Manage your company information and settings</p>
+                    <p className="page-subtitle">
+                        {isLoading ? 'Loading saved profile...' : 'Manage your company information and settings'}
+                    </p>
                 </div>
             </div>
 
@@ -64,15 +140,71 @@ export default function Profile() {
                 {/* Left side - Avatar & Quick Info */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                     <div className="card" style={{ textAlign: 'center', padding: '32px 20px' }}>
-                        <div style={{
-                            width: 100, height: 100, borderRadius: '50%',
-                            background: 'var(--accent2)', margin: '0 auto 16px',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            fontSize: 32, fontWeight: 800, color: 'white',
-                            boxShadow: '0 8px 16px rgba(124,111,255,0.3)'
-                        }}>
-                            {formData.name?.charAt(0) || 'M'}
+                        <div style={{ position: 'relative', width: 100, height: 100, margin: '0 auto 16px' }}>
+                            <label
+                                htmlFor="profile-pic-input"
+                                style={{
+                                    width: 100, height: 100, borderRadius: '50%',
+                                    background: formData.profilePic ? 'transparent' : 'var(--accent2)',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    fontSize: 32, fontWeight: 800, color: 'white',
+                                    boxShadow: '0 8px 16px rgba(124,111,255,0.3)',
+                                    cursor: 'pointer', overflow: 'hidden',
+                                    position: 'relative',
+                                }}
+                                title="Click to change profile picture"
+                            >
+                                {formData.profilePic ? (
+                                    <img
+                                        src={formData.profilePic}
+                                        alt="Profile"
+                                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                    />
+                                ) : (
+                                    formData.name?.charAt(0) || 'M'
+                                )}
+
+                                {/* Hover overlay with camera icon */}
+                                <div
+                                    className="avatar-hover-overlay"
+                                    style={{
+                                        position: 'absolute', inset: 0,
+                                        background: 'rgba(0,0,0,0.45)',
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                        opacity: 0, transition: 'opacity 0.2s',
+                                    }}
+                                    onMouseEnter={e => e.currentTarget.style.opacity = 1}
+                                    onMouseLeave={e => e.currentTarget.style.opacity = 0}
+                                >
+                                    <Camera size={22} color="white" />
+                                </div>
+                            </label>
+                            <input
+                                id="profile-pic-input"
+                                type="file"
+                                accept="image/*"
+                                onChange={handleProfilePicUpload}
+                                style={{ display: 'none' }}
+                            />
+
+                            {formData.profilePic && (
+                                <button
+                                    type="button"
+                                    onClick={handleProfilePicRemove}
+                                    title="Remove profile picture"
+                                    style={{
+                                        position: 'absolute', bottom: -2, right: -2,
+                                        width: 26, height: 26, borderRadius: '50%',
+                                        background: 'var(--red, #E74C3C)', border: '2px solid var(--bg-card, #1A1929)',
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                        cursor: 'pointer', color: 'white',
+                                    }}
+                                >
+                                    <Trash2 size={12} />
+                                </button>
+                            )}
                         </div>
+
                         <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 4 }}>{formData.name}</h2>
                         <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 16 }}>{formData.email}</p>
                         <div className="badge badge-green" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
@@ -94,11 +226,16 @@ export default function Profile() {
                                         cursor: 'pointer', border: '2px solid transparent',
                                         transition: 'all 0.2s'
                                     }}
-                                    onClick={() => {
+                                    onClick={async () => {
                                         const newTheme = { themeColor: color };
                                         setFormData(prev => ({ ...prev, ...newTheme }));
-                                        updateProfile(newTheme);
-                                        toast.success('Theme color updated!');
+                                        try {
+                                            await updateProfile(newTheme);
+                                            toast.success('Theme color updated!');
+                                        } catch (err) {
+                                            console.error(err);
+                                            toast.error('Failed to save theme color. Please try again.');
+                                        }
                                     }}
                                 />
                             ))}

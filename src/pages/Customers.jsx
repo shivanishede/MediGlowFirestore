@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Plus, Search, Trash2, Edit2, Users, Phone, MapPin, X } from 'lucide-react';
-import { partiesService } from '../services/firestoreService';
+import { partiesService, transactionsService } from '../services/firestoreService';
 import { formatCurrency } from '../utils/billPdf';
 import useStore from '../store/useStore';
 import toast from 'react-hot-toast';
@@ -10,17 +10,22 @@ const EMPTY_FORM = { type: 'CUSTOMER', name: '', phone: '', email: '', address: 
 export default function Customers() {
     const { profile } = useStore();
     const [parties, setParties] = useState([]);
+    const [transactions, setTransactions] = useState([]);
     const [search, setSearch] = useState('');
     const [showForm, setShowForm] = useState(false);
     const [form, setForm] = useState(EMPTY_FORM);
     const [loading, setLoading] = useState(true);
 
-    // Fetch live parties from Firestore
+    // Fetch live parties + all transactions from Firestore
     const fetchParties = async () => {
         try {
             setLoading(true);
-            const data = await partiesService.getAll();
-            setParties(data);
+            const [partyData, txnData] = await Promise.all([
+                partiesService.getAll(),
+                transactionsService.getAll(), // all types, no filter
+            ]);
+            setParties(partyData);
+            setTransactions(txnData);
             setLoading(false);
         } catch (error) {
             console.error("Failed to load parties:", error);
@@ -32,6 +37,29 @@ export default function Customers() {
     useEffect(() => {
         fetchParties();
     }, []);
+
+    // Build a map of customerId/customerName -> total outstanding balance,
+    // computed live from every unpaid transaction (sale, purchase, etc.)
+    // instead of trusting the static "balance" field stored on the party doc.
+    const balanceByParty = useMemo(() => {
+        const map = {};
+        transactions.forEach(t => {
+            const bal = Number(t.balance ?? t.balance_due ?? 0);
+            if (!bal) return;
+            const key = t.customerId || t.customerName || t.party_name;
+            if (!key) return;
+            map[key] = (map[key] || 0) + bal;
+        });
+        return map;
+    }, [transactions]);
+
+    const getPartyBalance = (party) => {
+        // Prefer matching by ID (most reliable), fall back to matching by name
+        const byId = party.id ? balanceByParty[party.id] : undefined;
+        if (byId !== undefined) return byId;
+        const byName = balanceByParty[party.name];
+        return byName !== undefined ? byName : (party.balance || 0);
+    };
 
     const filtered = parties.filter(c =>
         (c.name + (c.phone || '') + (c.email || '') + (c.address || '')).toLowerCase().includes(search.toLowerCase())
@@ -157,8 +185,8 @@ export default function Customers() {
         }
         };
 
-    const totalReceivable = parties.reduce((sum, p) => sum + (p.balance || 0), 0);
-    const partiesWithBalance = parties.filter(p => (p.balance || 0) > 0).length;
+    const totalReceivable = parties.reduce((sum, p) => sum + getPartyBalance(p), 0);
+    const partiesWithBalance = parties.filter(p => getPartyBalance(p) > 0).length;
 
     return (
         <div>
@@ -213,7 +241,7 @@ export default function Customers() {
                 )}
 
                 {!loading && filtered.map(cust => {
-                    const balance = cust.balance || 0;
+                    const balance = getPartyBalance(cust);
                     const initial = cust.name.charAt(0).toUpperCase();
                     return (
                         <div key={cust.id} className="card" style={{ position: 'relative' }}>
@@ -264,7 +292,7 @@ export default function Customers() {
                                 </div>
                                 <div style={{ textAlign: 'right' }}>
                                     <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 2 }}>Balance Due</div>
-                                    <div style={{ fontWeight: 700, color: balance > 0 ? 'var(--green)' : 'var(--text-muted)', fontSize: 14 }}>
+                                    <div style={{ fontWeight: 700, color: balance > 0 ? 'var(--red)' : 'var(--text-muted)', fontSize: 14 }}>
                                         {formatCurrency(balance)}
                                     </div>
                                 </div>

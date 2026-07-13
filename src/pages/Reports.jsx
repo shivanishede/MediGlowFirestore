@@ -16,6 +16,7 @@ ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend,
 
 const CHIP_TABS = [
     { id: 'summary', name: 'Executive Summary', icon: Layers },
+    { id: 'daily', name: 'Daily Ledger', icon: Calendar },
     { id: 'sales', name: 'Sales Report', icon: TrendingUp },
     { id: 'purchases', name: 'Purchase Report', icon: TrendingDown },
     { id: 'gst', name: 'GST & Taxes', icon: FileText },
@@ -69,6 +70,89 @@ export default function Reports() {
 
     const sales = useMemo(() => transactions.filter(t => t.type === 'SALE'), [transactions]);
     const purchases = useMemo(() => transactions.filter(t => t.type === 'PURCHASE'), [transactions]);
+    const expenses = useMemo(() => transactions.filter(t => t.type === 'EXPENSE'), [transactions]);
+
+    // Daily Ledger: which month is currently being viewed (defaults to current month)
+    const [ledgerMonth, setLedgerMonthRaw] = useState(() => {
+        const d = new Date();
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    });
+    const setLedgerMonth = (m) => { setLedgerMonthRaw(m); setSelectedDate(null); };
+
+    // Build the list of months that actually have data, so the dropdown is never empty/wrong
+    const availableMonths = useMemo(() => {
+        const set = new Set();
+        transactions.forEach(t => {
+            if (!t.date) return;
+            const d = new Date(t.date);
+            if (isNaN(d)) return;
+            set.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+        });
+        set.add(ledgerMonth); // always include the currently selected one
+        return Array.from(set).sort().reverse();
+    }, [transactions, ledgerMonth]);
+
+    // Group every Sale / Purchase / Expense by calendar date for the selected month
+    const dailyLedger = useMemo(() => {
+        const byDate = {};
+
+        const addTo = (t, key) => {
+            const d = t.date ? new Date(t.date) : null;
+            if (!d || isNaN(d)) return;
+            const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+            if (monthKey !== ledgerMonth) return;
+            const dateKey = d.toISOString().split('T')[0];
+            if (!byDate[dateKey]) {
+                byDate[dateKey] = { date: dateKey, sales: 0, purchases: 0, expenses: 0, salesCount: 0, purchasesCount: 0, expensesCount: 0 };
+            }
+            const amount = t.total_amount || t.total || t.amount || 0;
+            byDate[dateKey][key] += amount;
+            byDate[dateKey][`${key}Count`] += 1;
+        };
+
+        sales.forEach(s => addTo(s, 'sales'));
+        purchases.forEach(p => addTo(p, 'purchases'));
+        expenses.forEach(e => addTo(e, 'expenses'));
+
+        const rows = Object.values(byDate).sort((a, b) => b.date.localeCompare(a.date));
+
+        const totals = rows.reduce((acc, r) => ({
+            sales: acc.sales + r.sales,
+            purchases: acc.purchases + r.purchases,
+            expenses: acc.expenses + r.expenses,
+        }), { sales: 0, purchases: 0, expenses: 0 });
+
+        return { rows, totals, byDate };
+    }, [sales, purchases, expenses, ledgerMonth]);
+
+    // Which single day is currently picked on the calendar (null = none, table shows the whole month)
+    const [selectedDate, setSelectedDate] = useState(null);
+
+    // Build a 7-column calendar grid (with leading/trailing blanks) for the selected month
+    const calendarWeeks = useMemo(() => {
+        const [y, m] = ledgerMonth.split('-').map(Number);
+        const firstDay = new Date(y, m - 1, 1);
+        const daysInMonth = new Date(y, m, 0).getDate();
+        const startWeekday = firstDay.getDay(); // 0 = Sunday
+
+        const cells = [];
+        for (let i = 0; i < startWeekday; i++) cells.push(null);
+        for (let day = 1; day <= daysInMonth; day++) {
+            const dateKey = `${y}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+            cells.push({ day, dateKey, data: dailyLedger.byDate[dateKey] || null });
+        }
+        while (cells.length % 7 !== 0) cells.push(null);
+
+        const weeks = [];
+        for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
+        return weeks;
+    }, [ledgerMonth, dailyLedger.byDate]);
+
+    const isToday = (dateKey) => {
+        const d = new Date();
+        const todayKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        return dateKey === todayKey;
+    };
 
     // Data Aggregation
     const reports = useMemo(() => {
@@ -272,6 +356,200 @@ export default function Reports() {
                                         </div>
                                     ))}
                                 </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {activeTab === 'daily' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                        <div className="card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+                            <div>
+                                <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>Date-wise Sales, Purchases & Expenses</h3>
+                                <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>See exactly how much you sold, bought and spent on each date</p>
+                            </div>
+                            <select
+                                value={ledgerMonth}
+                                onChange={e => setLedgerMonth(e.target.value)}
+                                style={{
+                                    background: 'var(--bg-card)', color: 'var(--text-primary)',
+                                    border: '1px solid var(--border)', borderRadius: 8,
+                                    padding: '10px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer'
+                                }}
+                            >
+                                {availableMonths.map(m => {
+                                    const [y, mo] = m.split('-');
+                                    const label = new Date(Number(y), Number(mo) - 1, 1).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+                                    return <option key={m} value={m}>{label}</option>;
+                                })}
+                            </select>
+                        </div>
+
+                        <div className="grid-4" style={{ gap: 20 }}>
+                            <div className="card" style={{ borderLeft: '4px solid var(--accent2)' }}>
+                                <p style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600, marginBottom: 8 }}>SALES THIS MONTH</p>
+                                <h2 style={{ fontSize: 22, fontWeight: 800 }}>{formatCurrency(dailyLedger.totals.sales)}</h2>
+                            </div>
+                            <div className="card" style={{ borderLeft: '4px solid var(--yellow)' }}>
+                                <p style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600, marginBottom: 8 }}>PURCHASES THIS MONTH</p>
+                                <h2 style={{ fontSize: 22, fontWeight: 800 }}>{formatCurrency(dailyLedger.totals.purchases)}</h2>
+                            </div>
+                            <div className="card" style={{ borderLeft: '4px solid var(--red)' }}>
+                                <p style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600, marginBottom: 8 }}>EXPENSES THIS MONTH</p>
+                                <h2 style={{ fontSize: 22, fontWeight: 800 }}>{formatCurrency(dailyLedger.totals.expenses)}</h2>
+                            </div>
+                            <div className="card" style={{ borderLeft: '4px solid var(--green)' }}>
+                                <p style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600, marginBottom: 8 }}>NET THIS MONTH</p>
+                                <h2 style={{ fontSize: 22, fontWeight: 800, color: (dailyLedger.totals.sales - dailyLedger.totals.purchases - dailyLedger.totals.expenses) >= 0 ? 'var(--green)' : 'var(--red)' }}>
+                                    {formatCurrency(dailyLedger.totals.sales - dailyLedger.totals.purchases - dailyLedger.totals.expenses)}
+                                </h2>
+                            </div>
+                        </div>
+
+                        <div className="card">
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4, flexWrap: 'wrap', gap: 8 }}>
+                                <h3 style={{ fontSize: 16, fontWeight: 700 }}>Calendar View</h3>
+                                {selectedDate && (
+                                    <button className="btn btn-ghost btn-sm" onClick={() => setSelectedDate(null)}>
+                                        Showing {formatDate(selectedDate)} · Clear
+                                    </button>
+                                )}
+                            </div>
+                            <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', marginBottom: 20, fontSize: 12 }}>
+                                <span style={{ color: 'var(--text-muted)' }}>Month total:</span>
+                                <span style={{ color: 'var(--accent2)', fontWeight: 700 }}>Sales {formatCurrency(dailyLedger.totals.sales)}</span>
+                                <span style={{ color: 'var(--yellow)', fontWeight: 700 }}>Purchases {formatCurrency(dailyLedger.totals.purchases)}</span>
+                                <span style={{ color: 'var(--red)', fontWeight: 700 }}>Expenses {formatCurrency(dailyLedger.totals.expenses)}</span>
+                            </div>
+
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 6, marginBottom: 8 }}>
+                                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => (
+                                    <div key={d} style={{ textAlign: 'center', fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', padding: '4px 0' }}>{d}</div>
+                                ))}
+                            </div>
+
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                {calendarWeeks.map((week, wi) => (
+                                    <div key={wi} style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 6 }}>
+                                        {week.map((cell, ci) => {
+                                            if (!cell) return <div key={ci} />;
+                                            const hasData = !!cell.data;
+                                            const isSelected = selectedDate === cell.dateKey;
+                                            return (
+                                                <div
+                                                    key={ci}
+                                                    onClick={() => hasData && setSelectedDate(isSelected ? null : cell.dateKey)}
+                                                    style={{
+                                                        minHeight: 74,
+                                                        borderRadius: 8,
+                                                        padding: '6px 8px',
+                                                        background: isSelected ? 'rgba(124,111,255,0.18)' : 'var(--bg-card)',
+                                                        border: isSelected ? '1px solid var(--accent2)' : isToday(cell.dateKey) ? '1px solid rgba(124,111,255,0.4)' : '1px solid var(--border)',
+                                                        cursor: hasData ? 'pointer' : 'default',
+                                                        display: 'flex', flexDirection: 'column', gap: 2,
+                                                        opacity: hasData ? 1 : 0.5,
+                                                        transition: 'all 0.15s'
+                                                    }}
+                                                >
+                                                    <span style={{ fontSize: 11, fontWeight: 700, color: isToday(cell.dateKey) ? 'var(--accent2)' : 'var(--text-secondary)' }}>
+                                                        {cell.day}
+                                                    </span>
+                                                    {cell.data?.sales > 0 && (
+                                                        <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--accent2)' }}>
+                                                            {formatCurrency(cell.data.sales, false)}
+                                                        </span>
+                                                    )}
+                                                    {cell.data?.purchases > 0 && (
+                                                        <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--yellow)' }}>
+                                                            {formatCurrency(cell.data.purchases, false)}
+                                                        </span>
+                                                    )}
+                                                    {cell.data?.expenses > 0 && (
+                                                        <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--red)' }}>
+                                                            {formatCurrency(cell.data.expenses, false)}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                ))}
+                            </div>
+
+                            <div style={{ display: 'flex', gap: 16, marginTop: 16, fontSize: 11, color: 'var(--text-muted)', flexWrap: 'wrap' }}>
+                                <span><span style={{ color: 'var(--accent2)', fontWeight: 700 }}>■</span> Sales</span>
+                                <span><span style={{ color: 'var(--yellow)', fontWeight: 700 }}>■</span> Purchases</span>
+                                <span><span style={{ color: 'var(--red)', fontWeight: 700 }}>■</span> Expenses</span>
+                                <span>Tap a day to filter the table below</span>
+                            </div>
+                        </div>
+
+                        <div className="card">
+                            <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 20 }}>Day-by-Day Breakdown</h3>
+                            <div className="table-wrap">
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>Date</th>
+                                            <th style={{ textAlign: 'right' }}>Sales</th>
+                                            <th style={{ textAlign: 'right' }}>Purchases</th>
+                                            <th style={{ textAlign: 'right' }}>Expenses</th>
+                                            <th style={{ textAlign: 'right' }}>Net (Sales - Purchases - Expenses)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {(() => {
+                                            const visibleRows = selectedDate
+                                                ? dailyLedger.rows.filter(r => r.date === selectedDate)
+                                                : dailyLedger.rows;
+                                            if (visibleRows.length === 0) {
+                                                return (
+                                                    <tr>
+                                                        <td colSpan={5} style={{ textAlign: 'center', padding: '30px 0', color: 'var(--text-muted)' }}>
+                                                            No transactions recorded for this {selectedDate ? 'date' : 'month'}
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            }
+                                            return visibleRows.map(row => {
+                                            const net = row.sales - row.purchases - row.expenses;
+                                            return (
+                                                <tr key={row.date}>
+                                                    <td style={{ fontWeight: 600 }}>{formatDate(row.date)}</td>
+                                                    <td style={{ textAlign: 'right', color: 'var(--accent2)', fontWeight: 600 }}>
+                                                        {row.sales > 0 ? formatCurrency(row.sales) : '—'}
+                                                        {row.salesCount > 0 && <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 6 }}>({row.salesCount})</span>}
+                                                    </td>
+                                                    <td style={{ textAlign: 'right', color: 'var(--yellow)', fontWeight: 600 }}>
+                                                        {row.purchases > 0 ? formatCurrency(row.purchases) : '—'}
+                                                        {row.purchasesCount > 0 && <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 6 }}>({row.purchasesCount})</span>}
+                                                    </td>
+                                                    <td style={{ textAlign: 'right', color: 'var(--red)', fontWeight: 600 }}>
+                                                        {row.expenses > 0 ? formatCurrency(row.expenses) : '—'}
+                                                        {row.expensesCount > 0 && <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 6 }}>({row.expensesCount})</span>}
+                                                    </td>
+                                                    <td style={{ textAlign: 'right', fontWeight: 700, color: net >= 0 ? 'var(--green)' : 'var(--red)' }}>
+                                                        {formatCurrency(net)}
+                                                    </td>
+                                                </tr>
+                                            );
+                                        });
+                                        })()}
+                                    </tbody>
+                                    {dailyLedger.rows.length > 0 && (
+                                        <tfoot>
+                                            <tr>
+                                                <td style={{ fontWeight: 700, padding: 16 }}>TOTAL</td>
+                                                <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--accent2)' }}>{formatCurrency(dailyLedger.totals.sales)}</td>
+                                                <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--yellow)' }}>{formatCurrency(dailyLedger.totals.purchases)}</td>
+                                                <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--red)' }}>{formatCurrency(dailyLedger.totals.expenses)}</td>
+                                                <td style={{ textAlign: 'right', fontWeight: 800 }}>
+                                                    {formatCurrency(dailyLedger.totals.sales - dailyLedger.totals.purchases - dailyLedger.totals.expenses)}
+                                                </td>
+                                            </tr>
+                                        </tfoot>
+                                    )}
+                                </table>
                             </div>
                         </div>
                     </div>

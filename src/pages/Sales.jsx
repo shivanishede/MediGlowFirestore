@@ -39,6 +39,7 @@ function SalesList() {
     const [showForm, setShowForm] = useState(false);
     const [editData, setEditData] = useState(null);
     const [search, setSearch] = useState('');
+    const [dateFilter, setDateFilter] = useState(''); // 'YYYY-MM-DD' from the date picker, '' = all dates
     const [transactions, setTransactions] = useState([]);
     const [loading, setLoading] = useState(true);
 
@@ -69,10 +70,26 @@ function SalesList() {
         fetchTransactions();
     }, [activeTab]);
 
+    // Pulls the numeric part out of "SALE-00019" -> 19, so we can sort newest-first
+    const getInvoiceSeq = (invoiceNo) => {
+        const match = String(invoiceNo || '').match(/(\d+)\s*$/);
+        return match ? parseInt(match[1], 10) : 0;
+    };
+
     const getList = () => {
-        return transactions.filter(t =>
-            (t.customerName || t.notes || t.invoiceNo || '').toLowerCase().includes(search.toLowerCase())
-        );
+        return transactions
+            .filter(t =>
+                (t.customerName || t.notes || t.invoiceNo || '').toLowerCase().includes(search.toLowerCase())
+            )
+            .filter(t => {
+                if (!dateFilter) return true;
+                if (!t.date) return false;
+                const d = new Date(t.date);
+                if (isNaN(d)) return false;
+                const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                return key === dateFilter;
+            })
+            .sort((a, b) => getInvoiceSeq(b.invoiceNo) - getInvoiceSeq(a.invoiceNo));
     };
 
     const handleSave = async (data) => {
@@ -264,13 +281,29 @@ function SalesList() {
                 )}
             </div>
 
-            {/* Search */}
-            <div style={{ marginBottom: 16 }}>
-                <div className="search-bar">
+            {/* Search + Date Filter */}
+            <div style={{ marginBottom: 16, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                <div className="search-bar" style={{ flex: 1, minWidth: 220 }}>
                     <Search size={16} color="var(--text-muted)" />
                     <input value={search} onChange={e => setSearch(e.target.value)}
                         placeholder={`Search ${TYPE_LABELS[activeTab].toLowerCase()}s...`} />
                 </div>
+                <input
+                    type="date"
+                    value={dateFilter}
+                    onChange={e => setDateFilter(e.target.value)}
+                    title="Filter by date"
+                    style={{
+                        background: 'var(--bg-card)', color: 'var(--text-primary)',
+                        border: '1px solid var(--border)', borderRadius: 8,
+                        padding: '10px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer'
+                    }}
+                />
+                {dateFilter && (
+                    <button className="btn btn-ghost btn-sm" onClick={() => setDateFilter('')}>
+                        Clear date
+                    </button>
+                )}
             </div>
 
             {/* Table */}

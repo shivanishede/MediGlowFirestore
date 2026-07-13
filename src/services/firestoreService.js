@@ -303,6 +303,25 @@ export const dashboardService = {
         return true;
     }
 };
+
+// === BUSINESS PROFILE (single shared document) ===
+// Stored at settings/profile so it lives in Firestore instead of only
+// browser localStorage — survives cache clears, InPrivate windows, and
+// syncs across devices/browsers for the same business.
+export const profileService = {
+    async get() {
+        const docRef = doc(db, "settings", "profile");
+        const snap = await getDoc(docRef);
+        return snap.exists() ? snap.data() : null;
+    },
+    async update(data) {
+        const docRef = doc(db, "settings", "profile");
+        // merge: true means partial updates (e.g. just profilePic) never
+        // wipe out the other saved fields
+        return await setDoc(docRef, data, { merge: true });
+    }
+};
+
 // === COMPANIES (PRODUCT COMPANY NAMES) ===
 export const companiesService = {
     async getAll() {

@@ -58,6 +58,7 @@ async function getBase64FromUrl(url) {
 
 /**
  * Builds the full items-table config (head / body / foot / columnStyles) for autoTable.
+ * Column widths are tuned for the compact A5 layout (pageWidth ~136mm).
  * - Always includes an MRP column.
  * - Only includes the Discount column when at least one item actually has a discount.
  */
@@ -109,19 +110,19 @@ function buildInvoiceTable(items, pageWidth, txn, type) {
         });
     }
 
-    // ---- Column definitions (MRP always shown, Discount only if applicable) ----
+    // ---- Column definitions (compact widths for A5 page) ----
     const columns = [
-        { key: 'idx', header: '#', width: 8, halign: 'left' },
+        { key: 'idx', header: '#', width: 6, halign: 'left' },
         { key: 'name', header: 'Item name', width: null, halign: 'left', bold: true },
-        { key: 'qty', header: 'Quantity', width: 16, halign: 'right' },
-        { key: 'unit', header: 'Unit', width: 12, halign: 'center' },
-        { key: 'mrp', header: 'MRP', width: 20, halign: 'right' },
-        { key: 'price', header: 'Price/ unit', width: 22, halign: 'right' },
+        { key: 'qty', header: 'Qty', width: 10, halign: 'right' },
+        { key: 'unit', header: 'Unit', width: 9, halign: 'center' },
+        { key: 'mrp', header: 'MRP', width: 15, halign: 'right' },
+        { key: 'price', header: 'Price', width: 15, halign: 'right' },
     ];
     if (hasDiscount) {
-        columns.push({ key: 'discount', header: 'Discount', width: 28, halign: 'right' });
+        columns.push({ key: 'discount', header: 'Disc.', width: 18, halign: 'right' });
     }
-    columns.push({ key: 'amount', header: 'Amount', width: 24, halign: 'right' });
+    columns.push({ key: 'amount', header: 'Amount', width: 16, halign: 'right' });
 
     // Item name column takes up remaining width
     const fixedWidth = columns.filter((c) => c.key !== 'name').reduce((s, c) => s + c.width, 0);
@@ -151,17 +152,18 @@ function buildInvoiceTable(items, pageWidth, txn, type) {
 }
 
 /**
- * Generates a plain, table-based estimate/invoice PDF.
- * NOTE: This function is now async because it fetches the logo asset.
+ * Generates a plain, table-based estimate/invoice PDF on A5 paper (compact layout,
+ * fits ~15-18 line items on the half-page).
+ * NOTE: This function is async because it fetches the logo asset.
  * Make sure to await it wherever you call it:
  *   await downloadBillPDF(txn, profile, 'Bill of Supply');
  */
-export async function downloadBillPDF(txn, profile, type = 'Bill of Supply') {
+export async function downloadBillPDF(txn, profile, type = 'Estimate') {
     try {
-        const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-        const ml = 12, mr = 198;
+        const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a5' });
+        const ml = 6, mr = 142; // A5 width = 148mm
         const pageWidth = mr - ml;
-        let y = 14;
+        let y = 8;
 
         // Pure black for all text and borders, per spec (monochrome invoice)
         const dark = [0, 0, 0];
@@ -179,34 +181,34 @@ export async function downloadBillPDF(txn, profile, type = 'Bill of Supply') {
 
         // ---- Title ----
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(14);
+        doc.setFontSize(11);
         doc.setTextColor(...dark);
         doc.text(type, ml + pageWidth / 2, y, { align: 'center' });
-        y += 6;
+        y += 4;
 
         // ---- Company / Invoice info row ----
         const infoTop = y;
-        const infoHeight = 18;
+        const infoHeight = 13;
         const colSplit1 = ml + pageWidth * 0.62;
         const colSplit2 = ml + pageWidth * 0.81;
 
         doc.setDrawColor(...lineGrey);
-        doc.setLineWidth(0.25);
+        doc.setLineWidth(0.2);
         doc.rect(ml, infoTop, pageWidth, infoHeight);
         doc.line(colSplit1, infoTop, colSplit1, infoTop + infoHeight);
         doc.line(colSplit2, infoTop, colSplit2, infoTop + infoHeight);
 
-        const logoSize = 12;
-        const logoX = ml + 2;
+        const logoSize = 8.5;
+        const logoX = ml + 1.5;
         const logoY = infoTop + (infoHeight - logoSize) / 2;
-        let textX = ml + 3;
+        let textX = ml + 2.5;
 
         // ---- Add logo (from asset, now as base64) ----
         if (logoBase64) {
             try {
                 const format = logoBase64.startsWith('data:image/png') ? 'PNG' : 'JPEG';
                 doc.addImage(logoBase64, format, logoX, logoY, logoSize, logoSize);
-                textX = logoX + logoSize + 3;
+                textX = logoX + logoSize + 2;
             } catch (imgErr) {
                 console.error('Logo render error:', imgErr);
             }
@@ -217,7 +219,7 @@ export async function downloadBillPDF(txn, profile, type = 'Bill of Supply') {
                     ? profile.logo.split('base64,')[1]
                     : profile.logo;
                 doc.addImage(base64Data, format, logoX, logoY, logoSize, logoSize);
-                textX = logoX + logoSize + 3;
+                textX = logoX + logoSize + 2;
             } catch (imgErr) {
                 console.error('Profile logo render error:', imgErr);
             }
@@ -225,58 +227,61 @@ export async function downloadBillPDF(txn, profile, type = 'Bill of Supply') {
 
         // Company block
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(13);
+        doc.setFontSize(8.5);
         doc.setTextColor(...dark);
-        doc.text(profile?.name || 'Shree Samarth Agency', textX, infoTop + 7.5);
+        doc.text(profile?.name || 'Shree Samarth Agency', textX, infoTop + 5.5);
 
         doc.setFont('helvetica', 'normal');
-        doc.setFontSize(8.5);
+        doc.setFontSize(5.5);
         doc.setTextColor(...grey);
         const compParts = [];
         if (profile?.phone) compParts.push(`Phone no.: ${profile.phone}`);
         if (profile?.address) compParts.push(profile.address);
         if (profile?.gstin) compParts.push(`GSTIN: ${profile.gstin}`);
         if (compParts.length) {
-            doc.text(compParts[0], textX, infoTop + 12.5);
+            doc.text(compParts[0], textX, infoTop + 9);
         }
 
         // Invoice No. block
         doc.setFont('helvetica', 'normal');
-        doc.setFontSize(8.5);
+        doc.setFontSize(5.5);
         doc.setTextColor(...dark);
-        doc.text('Invoice No.', colSplit1 + 3, infoTop + 6);
+        doc.text('Invoice No.', colSplit1 + 2, infoTop + 4.5);
         doc.setFont('helvetica', 'bold');
-        doc.text(txn.invoiceNo || 'Draft', colSplit1 + 3, infoTop + 11);
+        doc.setFontSize(6.5);
+        doc.text(txn.invoiceNo || 'Draft', colSplit1 + 2, infoTop + 8);
 
         // Date block
         doc.setFont('helvetica', 'normal');
-        doc.text('Date', colSplit2 + 3, infoTop + 6);
+        doc.setFontSize(5.5);
+        doc.text('Date', colSplit2 + 2, infoTop + 4.5);
         doc.setFont('helvetica', 'bold');
-        doc.text(formatDate(txn.date), colSplit2 + 3, infoTop + 11);
+        doc.setFontSize(6.5);
+        doc.text(formatDate(txn.date), colSplit2 + 2, infoTop + 8);
 
         y = infoTop + infoHeight;
 
         // ---- Bill To block ----
         const billTop = y;
-        const lineH = 5;
+        const lineH = 3.5;
         const billLines = [txn.customerName || 'Cash Customer'];
         if (txn.customerAddress) billLines.push(txn.customerAddress);
         if (txn.customerPhone) billLines.push(`Contact No.: ${txn.customerPhone}`);
-        const billHeight = 6 + billLines.length * lineH + 2;
+        const billHeight = 4.5 + billLines.length * lineH + 1.5;
 
         doc.setDrawColor(...lineGrey);
         doc.rect(ml, billTop, pageWidth, billHeight);
 
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(9);
+        doc.setFontSize(6.5);
         doc.setTextColor(...dark);
-        doc.text('Bill To', ml + 3, billTop + 5);
+        doc.text('Bill To', ml + 2, billTop + 3.5);
 
-        let blY = billTop + 5 + lineH;
+        let blY = billTop + 3.5 + lineH;
         billLines.forEach((line, idx) => {
             doc.setFont('helvetica', idx === 0 ? 'bold' : 'normal');
-            doc.setFontSize(idx === 0 ? 10 : 8.5);
-            doc.text(line, ml + 3, blY);
+            doc.setFontSize(idx === 0 ? 7 : 5.5);
+            doc.text(line, ml + 2, blY);
             blY += lineH;
         });
 
@@ -289,25 +294,25 @@ export async function downloadBillPDF(txn, profile, type = 'Bill of Supply') {
 
         autoTable(doc, {
             startY: y,
-            margin: { left: ml, right: 210 - mr },
+            margin: { left: ml, right: 210 - mr }, // dummy right margin, tableWidth controls actual width
             tableWidth: pageWidth,
             head: table.head,
             body: table.body,
             foot: table.foot,
             theme: 'grid',
             styles: {
-                fontSize: 8.5,
+                fontSize: 6.5,
                 textColor: dark,
                 lineColor: lineGrey,
-                lineWidth: 0.25,
-                cellPadding: 1.6,
+                lineWidth: 0.2,
+                cellPadding: 0.8,
             },
             headStyles: {
                 fillColor: [255, 255, 255],
                 textColor: dark,
                 fontStyle: 'bold',
                 lineColor: lineGrey,
-                lineWidth: 0.25,
+                lineWidth: 0.2,
             },
             bodyStyles: {
                 fillColor: [255, 255, 255],
@@ -317,7 +322,7 @@ export async function downloadBillPDF(txn, profile, type = 'Bill of Supply') {
                 textColor: dark,
                 fontStyle: 'bold',
                 lineColor: lineGrey,
-                lineWidth: 0.25,
+                lineWidth: 0.2,
             },
             columnStyles: table.columnStyles,
         });
@@ -326,10 +331,17 @@ export async function downloadBillPDF(txn, profile, type = 'Bill of Supply') {
 
         // ---- Amount in words + Totals box ----
         const subTotal = totalAmount || Number(txn.paid || txn.amount || 0);
-        const rounded = Math.round(subTotal);
-        const roundOff = rounded - subTotal;
-        const grandTotal = Number(txn.total_amount || txn.total || txn.paid || txn.amount || txn.transferAmount || rounded);
-        const received = Number(txn.received != null ? txn.received : (txn.paid || grandTotal));
+        // Prefer the freshly-saved "total" field — "total_amount" is a legacy field from
+        // old seed/migrated data and must never win over an edit the user just made.
+        const grandTotal = Number(txn.total || txn.total_amount || txn.paid || txn.amount || txn.transferAmount || Math.round(subTotal));
+        // Overall invoice-level discount (the "Discount%" box in the edit form) — separate
+        // from any per-item discount already baked into totalDiscount/totalAmount above.
+        const invoiceDiscountAmt = Math.max(0, Math.round((subTotal - grandTotal) * 100) / 100);
+        const showInvoiceDiscount = invoiceDiscountAmt > 0.004;
+        const roundOff = Math.round((grandTotal - (subTotal - invoiceDiscountAmt)) * 100) / 100;
+        // FIX: default to 0 (not grandTotal) when nothing has actually been received,
+        // so an unpaid/pending invoice shows Received: Rs. 0.00, not fully paid.
+        const received = Number(txn.received || txn.paid || 0);
         const balance = grandTotal - received;
         const showSaved = totalDiscount > 0;
 
@@ -337,87 +349,95 @@ export async function downloadBillPDF(txn, profile, type = 'Bill of Supply') {
         const amtBoxWidth = pageWidth - wordsBoxWidth;
         const wordsBoxX = ml;
         const amtBoxX = ml + wordsBoxWidth;
-        const amtRowH = 5.2;
-        // header row + Sub Total, Round off, Total, Received, Balance, (+ You Saved if applicable)
-        const amtRowCount = showSaved ? 6 : 5;
-        const amtBoxHeight = 5.5 + amtRowH * amtRowCount + 2;
+        const amtRowH = 3.8;
+        // header row + Sub Total, (Discount if applicable), Round off, Total, Received, Balance, (+ You Saved if applicable)
+        const amtRowCount = 5 + (showInvoiceDiscount ? 1 : 0) + (showSaved ? 1 : 0);
+        const amtBoxHeight = 4 + amtRowH * amtRowCount + 1.5;
 
         doc.setDrawColor(...lineGrey);
         doc.rect(wordsBoxX, y, wordsBoxWidth, amtBoxHeight);
         doc.rect(amtBoxX, y, amtBoxWidth, amtBoxHeight);
 
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(8.5);
+        doc.setFontSize(6);
         doc.setTextColor(...dark);
-        doc.text('Invoice Amount In Words', wordsBoxX + 3, y + 5);
+        doc.text('Invoice Amount In Words', wordsBoxX + 2, y + 3.5);
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(9.5);
+        doc.setFontSize(6.5);
         const wordsText = numberToWords(grandTotal);
-        const wrapped = doc.splitTextToSize(wordsText, wordsBoxWidth - 6);
-        doc.text(wrapped, wordsBoxX + 3, y + 10.5);
+        const wrapped = doc.splitTextToSize(wordsText, wordsBoxWidth - 4);
+        doc.text(wrapped, wordsBoxX + 2, y + 7.5);
 
-        let ay = y + 5;
+        let ay = y + 3.5;
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(8.5);
+        doc.setFontSize(6);
         doc.setTextColor(...dark);
-        doc.text('Amounts', amtBoxX + 3, ay);
+        doc.text('Amounts', amtBoxX + 2, ay);
         ay += amtRowH;
 
         doc.setFont('helvetica', 'normal');
-        doc.text('Sub Total', amtBoxX + 3, ay);
-        doc.text(formatCurrency(subTotal), amtBoxX + amtBoxWidth - 3, ay, { align: 'right' });
+        doc.setFontSize(6);
+        doc.text('Sub Total', amtBoxX + 2, ay);
+        doc.text(formatCurrency(subTotal), amtBoxX + amtBoxWidth - 2, ay, { align: 'right' });
         ay += amtRowH;
 
-        doc.text('Round off', amtBoxX + 3, ay);
-        doc.text((roundOff >= 0 ? '+ ' : '- ') + formatCurrency(Math.abs(roundOff)), amtBoxX + amtBoxWidth - 3, ay, { align: 'right' });
+        if (showInvoiceDiscount) {
+            doc.text('Discount', amtBoxX + 2, ay);
+            doc.text('- ' + formatCurrency(invoiceDiscountAmt), amtBoxX + amtBoxWidth - 2, ay, { align: 'right' });
+            ay += amtRowH;
+        }
+
+        doc.text('Round off', amtBoxX + 2, ay);
+        doc.text((roundOff >= 0 ? '+ ' : '- ') + formatCurrency(Math.abs(roundOff)), amtBoxX + amtBoxWidth - 2, ay, { align: 'right' });
         ay += amtRowH;
 
         doc.setDrawColor(...thickLine);
-        doc.setLineWidth(0.4);
-        doc.line(amtBoxX, ay - 3.8, amtBoxX + amtBoxWidth, ay - 3.8);
-        doc.setLineWidth(0.25);
+        doc.setLineWidth(0.35);
+        doc.line(amtBoxX, ay - 2.8, amtBoxX + amtBoxWidth, ay - 2.8);
+        doc.setLineWidth(0.2);
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(9.5);
-        doc.text('Total', amtBoxX + 3, ay);
-        doc.text(formatCurrency(grandTotal), amtBoxX + amtBoxWidth - 3, ay, { align: 'right' });
+        doc.setFontSize(7);
+        doc.text('Total', amtBoxX + 2, ay);
+        doc.text(formatCurrency(grandTotal), amtBoxX + amtBoxWidth - 2, ay, { align: 'right' });
         ay += amtRowH;
 
         doc.setFont('helvetica', 'normal');
-        doc.setFontSize(8.5);
-        doc.text('Received', amtBoxX + 3, ay);
-        doc.text(formatCurrency(received), amtBoxX + amtBoxWidth - 3, ay, { align: 'right' });
+        doc.setFontSize(6);
+        doc.text('Received', amtBoxX + 2, ay);
+        doc.text(formatCurrency(received), amtBoxX + amtBoxWidth - 2, ay, { align: 'right' });
         ay += amtRowH;
 
-        doc.text('Balance', amtBoxX + 3, ay);
-        doc.text(formatCurrency(balance), amtBoxX + amtBoxWidth - 3, ay, { align: 'right' });
+        doc.text('Balance', amtBoxX + 2, ay);
+        doc.text(formatCurrency(balance), amtBoxX + amtBoxWidth - 2, ay, { align: 'right' });
         ay += amtRowH;
 
         if (showSaved) {
-            doc.text('You Saved', amtBoxX + 3, ay);
-            doc.text(formatCurrency(totalDiscount), amtBoxX + amtBoxWidth - 3, ay, { align: 'right' });
+            doc.text('You Saved', amtBoxX + 2, ay);
+            doc.text(formatCurrency(totalDiscount), amtBoxX + amtBoxWidth - 2, ay, { align: 'right' });
         }
 
         y += amtBoxHeight;
 
         // ---- Terms and conditions / Signatory ----
-        const footHeight = 26;
+        const footHeight = 16;
         doc.setDrawColor(...lineGrey);
-        doc.setLineWidth(0.25);
+        doc.setLineWidth(0.2);
         doc.rect(ml, y, pageWidth, footHeight);
         doc.line(wordsBoxX + wordsBoxWidth, y, wordsBoxX + wordsBoxWidth, y + footHeight);
 
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(8.5);
+        doc.setFontSize(6);
         doc.setTextColor(...dark);
-        doc.text('Terms and conditions', ml + 3, y + 5);
+        doc.text('Terms and conditions', ml + 2, y + 3.5);
         doc.setFont('helvetica', 'normal');
-        doc.text(txn.notes || 'Thank you for doing business with us.', ml + 3, y + 10.5);
+        doc.setFontSize(5.5);
+        doc.text(txn.notes || 'Thank you for doing business with us.', ml + 2, y + 7);
 
         doc.setFont('helvetica', 'normal');
-        doc.setFontSize(8.5);
-        doc.text(`For: ${profile?.name || 'Shree Samarth Agency'}`, amtBoxX + amtBoxWidth / 2, y + 5, { align: 'center' });
+        doc.setFontSize(6);
+        doc.text(`For: ${profile?.name || 'Shree Samarth Agency'}`, amtBoxX + amtBoxWidth / 2, y + 3.5, { align: 'center' });
         doc.setFont('helvetica', 'bold');
-        doc.text('Authorized Signatory', amtBoxX + amtBoxWidth / 2, y + footHeight - 4, { align: 'center' });
+        doc.text('Authorized Signatory', amtBoxX + amtBoxWidth / 2, y + footHeight - 3, { align: 'center' });
 
         // Download
         const filename = `${type.replace(/\s+/g, '_')}_${txn.invoiceNo || 'Draft'}.pdf`;
@@ -430,17 +450,17 @@ export async function downloadBillPDF(txn, profile, type = 'Bill of Supply') {
 
 /**
  * Same as downloadBillPDF but returns a { blob, filename } instead of triggering a download.
- * Used for sharing via Web Share API (e.g. WhatsApp).
+ * Used for sharing via Web Share API (e.g. WhatsApp). Same compact A5 layout.
  */
 export async function generateBillPDFBlob(txn, profile, type = 'Bill of Supply') {
     const { jsPDF } = await import('jspdf');
     const { default: autoTable } = await import('jspdf-autotable');
     const { default: logo } = await import('../assets/swami.jpg');
 
-    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-    const ml = 12, mr = 198;
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a5' });
+    const ml = 6, mr = 142;
     const pageWidth = mr - ml;
-    let y = 14;
+    let y = 8;
 
     const dark = [0, 0, 0];
     const grey = [0, 0, 0];
@@ -462,77 +482,80 @@ export async function generateBillPDFBlob(txn, profile, type = 'Bill of Supply')
 
     // Title
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(14);
+    doc.setFontSize(11);
     doc.setTextColor(...dark);
     doc.text(type, ml + pageWidth / 2, y, { align: 'center' });
-    y += 6;
+    y += 4;
 
     // Company / info row
     const infoTop = y;
-    const infoHeight = 18;
+    const infoHeight = 13;
     const colSplit1 = ml + pageWidth * 0.62;
     const colSplit2 = ml + pageWidth * 0.81;
     doc.setDrawColor(...lineGrey);
-    doc.setLineWidth(0.25);
+    doc.setLineWidth(0.2);
     doc.rect(ml, infoTop, pageWidth, infoHeight);
     doc.line(colSplit1, infoTop, colSplit1, infoTop + infoHeight);
     doc.line(colSplit2, infoTop, colSplit2, infoTop + infoHeight);
 
-    const logoSize = 12;
-    const logoX = ml + 2;
+    const logoSize = 8.5;
+    const logoX = ml + 1.5;
     const logoY = infoTop + (infoHeight - logoSize) / 2;
-    let textX = ml + 3;
+    let textX = ml + 2.5;
     if (logoBase64) {
         try {
             const fmt = logoBase64.startsWith('data:image/png') ? 'PNG' : 'JPEG';
             doc.addImage(logoBase64, fmt, logoX, logoY, logoSize, logoSize);
-            textX = logoX + logoSize + 3;
+            textX = logoX + logoSize + 2;
         } catch (e) { /* skip */ }
     }
 
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(13);
-    doc.setTextColor(...dark);
-    doc.text(profile?.name || 'Shree Samarth Agency', textX, infoTop + 7.5);
-    doc.setFont('helvetica', 'normal');
     doc.setFontSize(8.5);
+    doc.setTextColor(...dark);
+    doc.text(profile?.name || 'Shree Samarth Agency', textX, infoTop + 5.5);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(5.5);
     doc.setTextColor(...grey);
     const compParts = [];
     if (profile?.phone) compParts.push('Phone no.: ' + profile.phone);
     if (profile?.address) compParts.push(profile.address);
     if (profile?.gstin) compParts.push('GSTIN: ' + profile.gstin);
-    if (compParts.length) doc.text(compParts[0], textX, infoTop + 12.5);
+    if (compParts.length) doc.text(compParts[0], textX, infoTop + 9);
 
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8.5);
+    doc.setFontSize(5.5);
     doc.setTextColor(...dark);
-    doc.text('Invoice No.', colSplit1 + 3, infoTop + 6);
+    doc.text('Invoice No.', colSplit1 + 2, infoTop + 4.5);
     doc.setFont('helvetica', 'bold');
-    doc.text(txn.invoiceNo || 'Draft', colSplit1 + 3, infoTop + 11);
+    doc.setFontSize(6.5);
+    doc.text(txn.invoiceNo || 'Draft', colSplit1 + 2, infoTop + 8);
     doc.setFont('helvetica', 'normal');
-    doc.text('Date', colSplit2 + 3, infoTop + 6);
+    doc.setFontSize(5.5);
+    doc.text('Date', colSplit2 + 2, infoTop + 4.5);
     doc.setFont('helvetica', 'bold');
-    doc.text(formatDate(txn.date), colSplit2 + 3, infoTop + 11);
+    doc.setFontSize(6.5);
+    doc.text(formatDate(txn.date), colSplit2 + 2, infoTop + 8);
     y = infoTop + infoHeight;
 
     // Bill To
     const billTop = y;
-    const lineH = 5;
+    const lineH = 3.5;
     const billLines = [txn.customerName || 'Cash Customer'];
     if (txn.customerAddress) billLines.push(txn.customerAddress);
     if (txn.customerPhone) billLines.push('Contact No.: ' + txn.customerPhone);
-    const billHeight = 6 + billLines.length * lineH + 2;
+    const billHeight = 4.5 + billLines.length * lineH + 1.5;
     doc.setDrawColor(...lineGrey);
     doc.rect(ml, billTop, pageWidth, billHeight);
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(9);
+    doc.setFontSize(6.5);
     doc.setTextColor(...dark);
-    doc.text('Bill To', ml + 3, billTop + 5);
-    let blY = billTop + 5 + lineH;
+    doc.text('Bill To', ml + 2, billTop + 3.5);
+    let blY = billTop + 3.5 + lineH;
     billLines.forEach((line, idx) => {
         doc.setFont('helvetica', idx === 0 ? 'bold' : 'normal');
-        doc.setFontSize(idx === 0 ? 10 : 8.5);
-        doc.text(line, ml + 3, blY);
+        doc.setFontSize(idx === 0 ? 7 : 5.5);
+        doc.text(line, ml + 2, blY);
         blY += lineH;
     });
     y = billTop + billHeight;
@@ -546,83 +569,95 @@ export async function generateBillPDFBlob(txn, profile, type = 'Bill of Supply')
         startY: y, margin: { left: ml, right: 210 - mr }, tableWidth: pageWidth,
         head: table.head, body: table.body, foot: table.foot,
         theme: 'grid',
-        styles: { fontSize: 8.5, textColor: dark, lineColor: lineGrey, lineWidth: 0.25, cellPadding: 1.6 },
-        headStyles: { fillColor: [255,255,255], textColor: dark, fontStyle: 'bold', lineColor: lineGrey, lineWidth: 0.25 },
+        styles: { fontSize: 6.5, textColor: dark, lineColor: lineGrey, lineWidth: 0.2, cellPadding: 0.8 },
+        headStyles: { fillColor: [255,255,255], textColor: dark, fontStyle: 'bold', lineColor: lineGrey, lineWidth: 0.2 },
         bodyStyles: { fillColor: [255,255,255] },
-        footStyles: { fillColor: [255,255,255], textColor: dark, fontStyle: 'bold', lineColor: lineGrey, lineWidth: 0.25 },
+        footStyles: { fillColor: [255,255,255], textColor: dark, fontStyle: 'bold', lineColor: lineGrey, lineWidth: 0.2 },
         columnStyles: table.columnStyles,
     });
     y = doc.lastAutoTable.finalY;
 
     // Totals
     const subTotal = totalAmount || Number(txn.paid || txn.amount || 0);
-    const rounded = Math.round(subTotal);
-    const roundOff = rounded - subTotal;
-    const grandTotal = Number(txn.total_amount || txn.total || txn.paid || txn.amount || txn.transferAmount || rounded);
-    const received = Number(txn.received != null ? txn.received : (txn.paid || grandTotal));
+    // Prefer the freshly-saved "total" field — "total_amount" is a legacy field from
+    // old seed/migrated data and must never win over an edit the user just made.
+    const grandTotal = Number(txn.total || txn.total_amount || txn.paid || txn.amount || txn.transferAmount || Math.round(subTotal));
+    // Overall invoice-level discount (the "Discount%" box in the edit form) — separate
+    // from any per-item discount already baked into totalDiscount/totalAmount above.
+    const invoiceDiscountAmt = Math.max(0, Math.round((subTotal - grandTotal) * 100) / 100);
+    const showInvoiceDiscount = invoiceDiscountAmt > 0.004;
+    const roundOff = Math.round((grandTotal - (subTotal - invoiceDiscountAmt)) * 100) / 100;
+    // FIX: default to 0 (not grandTotal) when nothing has actually been received,
+    // so an unpaid/pending invoice shows Received: Rs. 0.00, not fully paid.
+    const received = Number(txn.received || txn.paid || 0);
     const balance = grandTotal - received;
     const showSaved = totalDiscount > 0;
 
     const wordsBoxWidth = pageWidth * 0.5;
     const amtBoxWidth = pageWidth - wordsBoxWidth;
     const amtBoxX = ml + wordsBoxWidth;
-    const amtRowH = 5.2;
-    const amtRowCount = showSaved ? 6 : 5;
-    const amtBoxHeight = 5.5 + amtRowH * amtRowCount + 2;
+    const amtRowH = 3.8;
+    const amtRowCount = 5 + (showInvoiceDiscount ? 1 : 0) + (showSaved ? 1 : 0);
+    const amtBoxHeight = 4 + amtRowH * amtRowCount + 1.5;
 
     doc.setDrawColor(...lineGrey);
     doc.rect(ml, y, wordsBoxWidth, amtBoxHeight);
     doc.rect(amtBoxX, y, amtBoxWidth, amtBoxHeight);
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(...dark);
-    doc.text('Invoice Amount In Words', ml + 3, y + 5);
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5);
-    const wrapped = doc.splitTextToSize(numberToWords(grandTotal), wordsBoxWidth - 6);
-    doc.text(wrapped, ml + 3, y + 10.5);
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(6); doc.setTextColor(...dark);
+    doc.text('Invoice Amount In Words', ml + 2, y + 3.5);
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(6.5);
+    const wrapped = doc.splitTextToSize(numberToWords(grandTotal), wordsBoxWidth - 4);
+    doc.text(wrapped, ml + 2, y + 7.5);
 
-    let ay = y + 5;
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5);
-    doc.text('Amounts', amtBoxX + 3, ay); ay += amtRowH;
+    let ay = y + 3.5;
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(6);
+    doc.text('Amounts', amtBoxX + 2, ay); ay += amtRowH;
 
-    doc.setFont('helvetica', 'normal');
-    doc.text('Sub Total', amtBoxX + 3, ay);
-    doc.text(formatCurrency(subTotal), amtBoxX + amtBoxWidth - 3, ay, { align: 'right' }); ay += amtRowH;
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(6);
+    doc.text('Sub Total', amtBoxX + 2, ay);
+    doc.text(formatCurrency(subTotal), amtBoxX + amtBoxWidth - 2, ay, { align: 'right' }); ay += amtRowH;
 
-    doc.text('Round off', amtBoxX + 3, ay);
-    doc.text((roundOff >= 0 ? '+ ' : '- ') + formatCurrency(Math.abs(roundOff)), amtBoxX + amtBoxWidth - 3, ay, { align: 'right' }); ay += amtRowH;
+    if (showInvoiceDiscount) {
+        doc.text('Discount', amtBoxX + 2, ay);
+        doc.text('- ' + formatCurrency(invoiceDiscountAmt), amtBoxX + amtBoxWidth - 2, ay, { align: 'right' }); ay += amtRowH;
+    }
 
-    doc.setDrawColor(...thickLine); doc.setLineWidth(0.4);
-    doc.line(amtBoxX, ay - 3.8, amtBoxX + amtBoxWidth, ay - 3.8); doc.setLineWidth(0.25);
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5);
-    doc.text('Total', amtBoxX + 3, ay);
-    doc.text(formatCurrency(grandTotal), amtBoxX + amtBoxWidth - 3, ay, { align: 'right' }); ay += amtRowH;
+    doc.text('Round off', amtBoxX + 2, ay);
+    doc.text((roundOff >= 0 ? '+ ' : '- ') + formatCurrency(Math.abs(roundOff)), amtBoxX + amtBoxWidth - 2, ay, { align: 'right' }); ay += amtRowH;
 
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5);
-    doc.text('Received', amtBoxX + 3, ay);
-    doc.text(formatCurrency(received), amtBoxX + amtBoxWidth - 3, ay, { align: 'right' }); ay += amtRowH;
+    doc.setDrawColor(...thickLine); doc.setLineWidth(0.35);
+    doc.line(amtBoxX, ay - 2.8, amtBoxX + amtBoxWidth, ay - 2.8); doc.setLineWidth(0.2);
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(7);
+    doc.text('Total', amtBoxX + 2, ay);
+    doc.text(formatCurrency(grandTotal), amtBoxX + amtBoxWidth - 2, ay, { align: 'right' }); ay += amtRowH;
 
-    doc.text('Balance', amtBoxX + 3, ay);
-    doc.text(formatCurrency(balance), amtBoxX + amtBoxWidth - 3, ay, { align: 'right' }); ay += amtRowH;
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(6);
+    doc.text('Received', amtBoxX + 2, ay);
+    doc.text(formatCurrency(received), amtBoxX + amtBoxWidth - 2, ay, { align: 'right' }); ay += amtRowH;
+
+    doc.text('Balance', amtBoxX + 2, ay);
+    doc.text(formatCurrency(balance), amtBoxX + amtBoxWidth - 2, ay, { align: 'right' }); ay += amtRowH;
 
     if (showSaved) {
-        doc.text('You Saved', amtBoxX + 3, ay);
-        doc.text(formatCurrency(totalDiscount), amtBoxX + amtBoxWidth - 3, ay, { align: 'right' });
+        doc.text('You Saved', amtBoxX + 2, ay);
+        doc.text(formatCurrency(totalDiscount), amtBoxX + amtBoxWidth - 2, ay, { align: 'right' });
     }
 
     y += amtBoxHeight;
 
     // Footer
-    const footHeight = 26;
-    doc.setDrawColor(...lineGrey); doc.setLineWidth(0.25);
+    const footHeight = 16;
+    doc.setDrawColor(...lineGrey); doc.setLineWidth(0.2);
     doc.rect(ml, y, pageWidth, footHeight);
     doc.line(ml + wordsBoxWidth, y, ml + wordsBoxWidth, y + footHeight);
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(...dark);
-    doc.text('Terms and conditions', ml + 3, y + 5);
-    doc.setFont('helvetica', 'normal');
-    doc.text(txn.notes || 'Thank you for doing business with us.', ml + 3, y + 10.5);
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5);
-    doc.text('For: ' + (profile?.name || 'Shree Samarth Agency'), amtBoxX + amtBoxWidth / 2, y + 5, { align: 'center' });
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(6); doc.setTextColor(...dark);
+    doc.text('Terms and conditions', ml + 2, y + 3.5);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(5.5);
+    doc.text(txn.notes || 'Thank you for doing business with us.', ml + 2, y + 7);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(6);
+    doc.text('For: ' + (profile?.name || 'Shree Samarth Agency'), amtBoxX + amtBoxWidth / 2, y + 3.5, { align: 'center' });
     doc.setFont('helvetica', 'bold');
-    doc.text('Authorized Signatory', amtBoxX + amtBoxWidth / 2, y + footHeight - 4, { align: 'center' });
+    doc.text('Authorized Signatory', amtBoxX + amtBoxWidth / 2, y + footHeight - 3, { align: 'center' });
 
     // Return as blob instead of saving
     const filename = type.replace(/\s+/g, '_') + '_' + (txn.invoiceNo || 'Draft') + '.pdf';

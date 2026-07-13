@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { profileService } from '../services/firestoreService';
 
 const generateId = () => Math.random().toString(36).substr(2, 9).toUpperCase();
 const getDate = () => new Date().toISOString().split('T')[0];
@@ -8,6 +9,10 @@ const useStore = create(
   persist(
     (set, get) => ({
       // Business Profile
+      // NOTE: This is still cached locally (via persist) for instant loading,
+      // but the SOURCE OF TRUTH is now Firestore (settings/profile doc).
+      // Call loadProfile() on app start to pull the latest saved data in,
+      // and updateProfile() now writes to Firestore, not just localStorage.
       profile: {
         name: 'Shree Samarth Agency',
         owner: 'Owner Name',
@@ -16,10 +21,35 @@ const useStore = create(
         address: 'Pune, Maharashtra',
         gstin: '27AAAAA0000A1Z5',
         logo: null,
+        profilePic: null, // base64 image of the owner/business profile picture
         paymentQR: null, // base64 image of the business's UPI/payment scanner QR code
         themeColor: '#7C6FFF',
       },
-      updateProfile: (data) => set((s) => ({ profile: { ...s.profile, ...data } })),
+      profileLoaded: false,
+
+      // Pulls the saved profile from Firestore and merges it into local state.
+      // Safe to call multiple times (e.g. on every app mount).
+      loadProfile: async () => {
+        try {
+          const saved = await profileService.get();
+          if (saved) {
+            set((s) => ({ profile: { ...s.profile, ...saved }, profileLoaded: true }));
+          } else {
+            set({ profileLoaded: true });
+          }
+        } catch (err) {
+          console.error('Failed to load profile from Firestore:', err);
+          set({ profileLoaded: true });
+        }
+      },
+
+      // Updates local state immediately (so the UI feels instant),
+      // then persists the change to Firestore. Throws on Firestore failure
+      // so callers (e.g. Profile.jsx) can show an error toast if the save fails.
+      updateProfile: async (data) => {
+        set((s) => ({ profile: { ...s.profile, ...data } }));
+        await profileService.update(data);
+      },
 
       // Customers / Parties
       customers: [

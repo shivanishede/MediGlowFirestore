@@ -153,6 +153,15 @@ export default function Dashboard() {
         }]
     };
 
+    const quickLinks = [
+        { label: 'New Sale', icon: '🛒', color: '#7C6FFF', action: () => navigate('/sales') },
+        { label: 'New Purchase', icon: '📦', color: '#F39C12', action: () => navigate('/purchases') },
+        { label: 'Add Expense', icon: '💸', color: '#E74C3C', action: () => navigate('/expenses') },
+        { label: 'Add Party', icon: '👤', color: '#2ECC71', action: () => navigate('/customers') },
+        { label: 'Add Item', icon: '📋', color: '#3498DB', action: () => navigate('/items') },
+        { label: 'View Reports', icon: '📊', color: '#9B59B6', action: () => navigate('/reports') },
+    ];
+
     return (
         <div>
             {/* Welcome banner */}
@@ -175,132 +184,77 @@ export default function Dashboard() {
                 </div>
             </div>
 
-            {/* You'll get / give cards */}
-            <div className="grid-2" style={{ marginBottom: 20, gap: 16 }}>
-                <div className="stat-card" style={{ borderColor: 'rgba(46,204,113,0.2)' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-                        <div style={{ width: 36, height: 36, borderRadius: 8, background: 'rgba(46,204,113,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <TrendingDown size={18} color="var(--green)" />
+            {/* Quick Links - horizontal row */}
+            <div className="card" style={{ marginBottom: 20 }}>
+                <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 16 }}>Quick Links</h3>
+                <div
+                    style={{
+                        display: 'flex',
+                        flexWrap: 'nowrap',
+                        overflowX: 'auto',
+                        gap: 10,
+                        paddingBottom: 4,
+                    }}
+                >
+                    {quickLinks.map(q => (
+                        <div
+                            key={q.label}
+                            className="quick-action"
+                            onClick={q.action}
+                            style={{
+                                display: 'flex',
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                gap: 10,
+                                flex: '0 0 auto',
+                                minWidth: 170,
+                                padding: '12px 16px',
+                                cursor: 'pointer',
+                            }}
+                        >
+                            <div className="quick-action-icon" style={{ background: q.color + '22', flexShrink: 0 }}>
+                                <span style={{ fontSize: 20 }}>{q.icon}</span>
+                            </div>
+                            <span className="quick-action-label" style={{ whiteSpace: 'nowrap' }}>{q.label}</span>
                         </div>
-                        <span style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>YOU'LL GET</span>
-                    </div>
-                    <div className="stat-value" style={{ color: 'var(--green)' }}>{formatCurrency(dbStats.youllGet)}</div>
-                    <div className="stat-label">Receivables from customers</div>
-                </div>
-                <div className="stat-card" style={{ borderColor: 'rgba(231,76,60,0.2)' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-                        <div style={{ width: 36, height: 36, borderRadius: 8, background: 'rgba(231,76,60,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <TrendingUp size={18} color="var(--red)" />
-                        </div>
-                        <span style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>YOU'LL GIVE</span>
-                    </div>
-                    <div className="stat-value" style={{ color: 'var(--red)' }}>{formatCurrency(dbStats.youllGive)}</div>
-                    <div className="stat-label">Payables to suppliers</div>
+                    ))}
                 </div>
             </div>
 
-            {/* Main stats */}
-            <div className="grid-4" style={{ marginBottom: 20, gap: 16 }}>
-                {[
-                    { label: 'Total Sales', value: formatCurrency(dbStats.totalSales), icon: ShoppingCart, color: '#7C6FFF', bg: 'rgba(124,111,255,0.15)', trend: `Live from DB` },
-                    { label: 'Total Purchases', value: formatCurrency(dbStats.totalPurchases), icon: Package, color: '#F39C12', bg: 'rgba(243,156,18,0.15)', trend: `Live from DB` },
-                    { label: 'Total Expenses', value: formatCurrency(dbStats.totalExpenses), icon: Wallet, color: '#E74C3C', bg: 'rgba(231,76,60,0.15)', trend: 'This month' },
-                    { label: 'Net Profit', value: formatCurrency(dbStats.netProfit), icon: TrendingUp, color: '#2ECC71', bg: 'rgba(46,204,113,0.15)', trend: 'Estimated' },
-                ].map(s => (
-                    <div key={s.label} className="stat-card">
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                            <div style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{s.label}</div>
-                            <div style={{ width: 36, height: 36, borderRadius: 8, background: s.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                <s.icon size={18} color={s.color} />
+            {/* Recent transactions */}
+            <div className="card" style={{ marginBottom: 20 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                    <h3 style={{ fontSize: 15, fontWeight: 700 }}>Recent Transactions</h3>
+                    <button className="btn btn-ghost btn-sm" onClick={() => navigate('/sales')}>
+                        See All <ArrowRight size={13} />
+                    </button>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {recentTxns.length === 0 && (
+                        <div className="empty-state" style={{ padding: '30px 0' }}>
+                            <FileText size={32} />
+                            <p>No transactions yet</p>
+                        </div>
+                    )}
+                    {recentTxns.map(txn => (
+                        <div key={txn.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                <div style={{ width: 34, height: 34, borderRadius: 8, background: txn.type === 'SALE' ? 'rgba(124,111,255,0.15)' : (txn.type === 'PURCHASE' ? 'rgba(243,156,18,0.15)' : 'rgba(231,76,60,0.15)'), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>
+                                    {txn.type === 'SALE' ? '🛒' : (txn.type === 'PURCHASE' ? '📦' : '💸')}
+                                </div>
+                                <div>
+                                    <div style={{ fontSize: 13, fontWeight: 600 }}>{txn.customerName || txn.fromParty || 'Unknown'}</div>
+                                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{txn.type} · {formatDate(txn.date)}</div>
+                                </div>
+                            </div>
+                            <div style={{ textAlign: 'right' }}>
+                                <div style={{ fontSize: 13, fontWeight: 700, color: (txn.type === 'SALE' || txn.type === 'sale') ? 'var(--accent2)' : 'var(--yellow)' }}>{formatCurrency(txn.total || txn.amount || txn.transferAmount || 0)}</div>
+                                <div style={{ fontSize: 11, color: (txn.balance || 0) > 0 ? 'var(--red)' : 'var(--green)' }}>
+                                    {(txn.balance || 0) > 0 ? 'Pending' : 'Paid'}
+                                </div>
                             </div>
                         </div>
-                        <div className="stat-value" style={{ color: s.color }}>{s.value}</div>
-                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{s.trend}</div>
-                    </div>
-                ))}
-            </div>
-
-            {/* Charts */}
-            <div className="grid-2" style={{ marginBottom: 20, gap: 16 }}>
-                <div className="card">
-                    <div style={{ marginBottom: 16 }}>
-                        <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 2 }}>Sales & Purchase Trend</h3>
-                        <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>Last 6 months comparison</p>
-                    </div>
-                    <div style={{ height: 230 }}>
-                        <Line data={lineChartData} options={chartOptions} />
-                    </div>
-                </div>
-                <div className="card">
-                    <div style={{ marginBottom: 16 }}>
-                        <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 2 }}>Monthly Comparison</h3>
-                        <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>Sales vs Purchases bar chart</p>
-                    </div>
-                    <div style={{ height: 230 }}>
-                        <Bar data={barData} options={{ ...chartOptions, plugins: { ...chartOptions.plugins, legend: { ...chartOptions.plugins.legend } } }} />
-                    </div>
-                </div>
-            </div>
-
-            {/* Quick actions + Recent transactions */}
-            <div className="grid-2" style={{ gap: 16, marginBottom: 20 }}>
-                {/* Quick Links */}
-                <div className="card">
-                    <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 16 }}>Quick Links</h3>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                        {[
-                            { label: 'New Sale', icon: '🛒', color: '#7C6FFF', action: () => navigate('/sales') },
-                            { label: 'New Purchase', icon: '📦', color: '#F39C12', action: () => navigate('/purchases') },
-                            { label: 'Add Expense', icon: '💸', color: '#E74C3C', action: () => navigate('/expenses') },
-                            { label: 'Add Party', icon: '👤', color: '#2ECC71', action: () => navigate('/customers') },
-                            { label: 'Add Item', icon: '📋', color: '#3498DB', action: () => navigate('/items') },
-                            { label: 'View Reports', icon: '📊', color: '#9B59B6', action: () => navigate('/reports') },
-                        ].map(q => (
-                            <div key={q.label} className="quick-action" onClick={q.action}>
-                                <div className="quick-action-icon" style={{ background: q.color + '22' }}>
-                                    <span style={{ fontSize: 22 }}>{q.icon}</span>
-                                </div>
-                                <span className="quick-action-label">{q.label}</span>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-
-                {/* Recent transactions */}
-                <div className="card">
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-                        <h3 style={{ fontSize: 15, fontWeight: 700 }}>Recent Transactions</h3>
-                        <button className="btn btn-ghost btn-sm" onClick={() => navigate('/sales')}>
-                            See All <ArrowRight size={13} />
-                        </button>
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                        {recentTxns.length === 0 && (
-                            <div className="empty-state" style={{ padding: '30px 0' }}>
-                                <FileText size={32} />
-                                <p>No transactions yet</p>
-                            </div>
-                        )}
-                        {recentTxns.map(txn => (
-                            <div key={txn.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                    <div style={{ width: 34, height: 34, borderRadius: 8, background: txn.type === 'SALE' ? 'rgba(124,111,255,0.15)' : (txn.type === 'PURCHASE' ? 'rgba(243,156,18,0.15)' : 'rgba(231,76,60,0.15)'), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>
-                                        {txn.type === 'SALE' ? '🛒' : (txn.type === 'PURCHASE' ? '📦' : '💸')}
-                                    </div>
-                                    <div>
-                                        <div style={{ fontSize: 13, fontWeight: 600 }}>{txn.customerName || txn.fromParty || 'Unknown'}</div>
-                                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{txn.type} · {formatDate(txn.date)}</div>
-                                    </div>
-                                </div>
-                                <div style={{ textAlign: 'right' }}>
-                                    <div style={{ fontSize: 13, fontWeight: 700, color: (txn.type === 'SALE' || txn.type === 'sale') ? 'var(--accent2)' : 'var(--yellow)' }}>{formatCurrency(txn.total || txn.amount || txn.transferAmount || 0)}</div>
-                                    <div style={{ fontSize: 11, color: (txn.balance || 0) > 0 ? 'var(--red)' : 'var(--green)' }}>
-                                        {(txn.balance || 0) > 0 ? 'Pending' : 'Paid'}
-                                    </div>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
+                    ))}
                 </div>
             </div>
 
